@@ -1,0 +1,173 @@
+﻿================================================================================
+PRUEBA DE CARGA - SERVICIO DE LOGIN (FAKESTORE API)
+Conclusiones y Hallazgos del Ejercicio
+================================================================================
+
+INFORMACION GENERAL
+==================
+Herramienta utilizada: K6 v1.7.1
+Endpoint objetivo: POST https://fakestoreapi.com/auth/login
+Datos parametrizados: 5 usuarios (CSV desde scripts/data/users.csv)
+Total iteraciones ejecutadas: 5,399
+Fecha de ejecucion: 2026-04-08 19:09
+
+RESULTADOS CUANTITATIVOS
+========================
+
+1. TIEMPO DE RESPUESTA (Threshold: p(95) < 1500ms)
+   - Resultado: CUMPLIDO [OK]
+   - p(95): 353.60 ms
+   - p(90): 341.58 ms
+   - Promedio (avg): 312.18 ms
+   - Mediana: 319.89 ms
+   - Minimo: 155.59 ms
+   - Maximo: 2,633.00 ms
+   - Conclusion: El servicio presenta buen rendimiento en latencia bajo carga
+                 normal. El p(95) es ~4x mas rapido que el umbral permitido.
+                 El valor maximo de 2,633 ms evidencia picos de latencia
+                 aislados, probablemente coincidentes con requests que fallaron.
+
+2. TASA DE ERROR HTTP (Threshold: rate < 3%)
+   - Resultado: NO CUMPLIDO [FALLO]
+   - Tasa observada: 9.39% (507 / 5,399)
+   - Solicitudes exitosas: 4,892
+   - Solicitudes fallidas: 507
+   - Total: 5,399 requests
+   - Conclusion: La tasa de error SUPERA el limite permitido (9.39% > 3%).
+                 El servicio presenta problemas de confiabilidad en el endpoint
+                 de login. Aproximadamente 1 de cada 11 intentos falla.
+
+3. THROUGHPUT / TPS (Threshold: rate >= 20/s)
+   - Resultado: NO CUMPLIDO [FALLO] (Marginal)
+   - TPS observado: 19.90/s
+   - Desviacion: -0.10/s (apenas 0.5% por debajo)
+   - Conclusion: El sistema casi alcanza los 20 TPS, pero no los supera.
+                 La diferencia es minima y puede estar relacionada con la
+                 tasa de error que reduce el throughput efectivo.
+
+4. VALIDACIONES FUNCIONALES (Checks)
+   - "status es 201":            4,892 pasaron / 507 fallaron
+   - "respuesta contiene token": 4,892 pasaron / 507 fallaron
+   - Total checks: 10,798 (9,784 pasaron / 1,014 fallaron)
+   - Tasa de exito: 90.61%
+   - Conclusion: Ambos checks fallan exactamente en los mismos requests,
+                 confirmando que las 507 fallas son fallos completos del login
+                 (sin status 201 ni token en la respuesta).
+
+ANALISIS DETALLADO DE RENDIMIENTO
+==================================
+
+Metricas de http_req_duration (ms):
+- Promedio:  312.18 ms
+- Mediana:   319.89 ms
+- Minimo:    155.59 ms
+- Maximo:  2,633.00 ms
+- p(90):     341.58 ms
+- p(95):     353.60 ms  <- THRESHOLD OK
+
+Metricas de http_req_waiting (ms):
+- Promedio: 310.79 ms | Mediana: 318.57 ms | p(95): 351.47 ms
+
+Tiempos de conexion y TLS (ms):
+- http_req_connecting avg:      0.41 ms (max 82.25 ms)
+- http_req_tls_handshaking avg: 0.49 ms (max 193.77 ms)
+
+Duracion de iteracion (ms):
+- Promedio: 1,314.86 ms | p(90): 1,344.47 ms | p(95): 1,356.67 ms
+
+Virtual Users (VUs):
+- Minimo durante test: 7 VUs
+- Maximo durante test: 30 VUs
+- Configuracion: ramping-arrival-rate con startRate: 20/s
+
+Transferencia de datos:
+- Recibidos: 3.26 MB (0.01 MB/s)
+- Enviados:  0.67 MB
+
+PROBLEMAS IDENTIFICADOS
+=======================
+
+Problema 1: TASA DE ERROR ALTA (9.39%)
+Severidad: CRITICA
+Evidencia: 507 requests fallaron de 5,399 totales; 1,014 checks fallidos
+Impacto: El servicio NO cumple con el SLA de < 3% de errores
+Recomendaciones:
+  - Investigar por que el endpoint /auth/login rechaza ~9.4% de requests
+  - Verificar si el servidor tiene limitaciones de conexion simultanea
+  - Revisar si hay throttling del lado del servidor (rate limiting)
+  - Analizar si algunos usuarios en el CSV no tienen credenciales validas
+  - Implementar reintentos automaticos para requests fallidas
+
+Problema 2: TPS POR DEBAJO DEL OBJETIVO
+Severidad: MEDIA
+Evidencia: 19.90/s vs 20/s requerido (diferencia de 0.1 req/s)
+Impacto: Tecnicamente NO alcanza el objetivo de 20 TPS
+Recomendaciones:
+  - La tasa de error reduce el throughput efectivo; resolver el Problema 1
+    podria subsanar tambien este threshold
+  - Revisar si hay bottlenecks en la red o en el cliente k6
+  - Considerar aumentar preAllocatedVUs para absorber la demanda
+
+HALLAZGOS POSITIVOS
+===================
+[OK] Latencia excelente: p(95) = 353.60 ms (muy por debajo del limite de 1,500 ms)
+[OK] Datos parametrizados correctamente: CSV se cargo sin errores
+[OK] Script k6 bien estructurado: modular con config, helpers y checks
+[OK] Reporte HTML generado exitosamente en docs/output/login-load-test-report.html
+[OK] Sintaxis correcta: Todos los elementos del test se ejecutaron sin errores
+
+CUMPLIMIENTO DE REQUISITOS
+===========================
+
+Requisito                                    Estado    Evidencia
+-----------------------------------------------------------------------
+1. Herramienta K6                           CUMPLE    K6 v1.7.1 utilizado
+2. Datos CSV parametrizados                 CUMPLE    5 usuarios cargados
+3. Endpoint login configurado               CUMPLE    POST /auth/login
+4. Alcanzar 20 TPS                          NO        19.90/s (0.1 por debajo)
+5. Validacion p(95) < 1500ms                CUMPLE    353.60 ms observado
+6. Validacion tasa error < 3%               NO        9.39% observado
+7. Validaciones funcionales (checks)        CUMPLE    Status 201 + Token
+8. Generacion reporte HTML                  CUMPLE    Reporte generado correctamente
+
+CONCLUSIONES FINALES
+====================
+
+El proyecto implementa correctamente una prueba de carga con k6 siguiendo
+mejores practicas (modularizacion, parametrizacion, validaciones). Sin embargo,
+el servicio de destino (FakeStore API) NO CUMPLE los requisitos de SLA:
+
+1. La tasa de error (9.39%) es mas de 3x el limite permitido (3%)
+2. El throughput (19.90 TPS) queda marginalmente por debajo del objetivo (20 TPS)
+3. Se registraron picos de latencia de hasta 2,633 ms en requests con error
+
+RECOMENDACIONES PARA PROXIMAS ITERACIONES
+==========================================
+
+Corto Plazo:
+  1. Ejecutar analisis de logs del servidor para entender el origen del 9.39%
+     de fallas en el endpoint /auth/login
+  2. Validar que los 5 usuarios del CSV tengan credenciales activas y correctas
+  3. Revisar si FakeStore API aplica rate limiting o restricciones de IP
+
+Mediano Plazo:
+  1. Implementar retry logic con exponential backoff en requests fallidas
+  2. Aumentar preAllocatedVUs para garantizar >= 20 TPS sostenidos
+  3. Realizar tests en distintos horarios para identificar si el problema es
+     de concurrencia del servidor remoto
+
+Largo Plazo:
+  1. Migrar a un endpoint interno/controlado para mediciones mas consistentes
+  2. Establecer SLAs basados en el comportamiento real del servicio
+  3. Implementar monitoreo continuo con alertas en tiempo real
+
+RESULTADO FINAL: TEST NO APROBADO
+==================================
+El script cumple con los requisitos tecnicos de implementacion [OK]
+Pero el servicio objetivo NO cumple los requisitos de performance [FALLO]
+
+2 thresholds incumplidos: http_error_rate > 3% y TPS < 20/s
+Necesario: Resolver la tasa de error del servidor antes de considerar
+la prueba como exitosa.
+
+================================================================================
